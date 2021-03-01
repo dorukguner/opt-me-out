@@ -54,6 +54,9 @@ disableLabels = (node) => {
             || (elem.title && elem.title.match(filterRegex)) || (elem.for && elem.for.match(filterRegex))));
 
     for (const label of labels) {
+        if (!label.id) {
+            label.id = uuidv4();
+        }
         modifiedLabels[label.id] = label.style.pointerEvents;
         label.disabled = true;
         label.style.pointerEvents = 'none';
@@ -74,6 +77,12 @@ enableLabels = () => {
         label.style.pointerEvents = modifiedLabels[labelId];
         delete modifiedLabels[labelId];
     }
+}
+
+uuidv4 = () => {
+    return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+    );
 }
 
 const observer = new MutationObserver(callback);
