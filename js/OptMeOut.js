@@ -1,12 +1,24 @@
+/**
+ * The idea is to:
+ * 1: Find all checkboxes and labels related to marketing
+ *      a: If a label is related to any checkbox we disable it and remove all pointer events
+ *      b: All checkboxes are disabled no matter what, find all related labels and disable them too
+ *      C: An element is related to another element if it is a sibling, parent or child
+ *      d: We check parents and children first 
+ * 2: Store these to allow for re-enabling
+ * 
+ * 
+ * 
+*/
+
+// TODO make labelsToDisable a map between the label and whether or not the checkbox is selected to then allow for deselecting of checkbox by firing event
+
 const targetNode = document;
-
 const config = { childList: true, subtree: true };
+const filterRegex = /mail|sub|letter|marketing|opt\-in|optin|promo/i;
 
-const filterRegex = /mail|sub|letter|marketing|opt\-in/i;
-
-let checkboxesFound = [];
-const modifiedCheckboxes = [];
-const modifiedLabels = {};
+let labelsAndCheckboxes = {};
+let modifiedLabelsAndCheckboxes = {};
 
 let enabled;
 let iconSet = false;
@@ -20,62 +32,129 @@ const callback = (mutations, observer) => {
                     return;
                 }
 
-                const checkboxes = [...node.getElementsByTagName('INPUT')].filter(elem => !checkboxesFound.includes(elem) && !modifiedCheckboxes.includes(elem)
-                    && (elem.type === 'checkbox' || (elem.classList && [...elem.classList].find(clazz => clazz.match(/checkbox/i))))
-                    && ((elem.id && elem.id.match(filterRegex)) || (elem.name && elem.name.match(filterRegex)) || (elem.title && elem.title.match(filterRegex))));
+                // Get all checkboxes and labels that haven't already been found
 
-                if (enabled) {
-                    disableCheckboxes(checkboxes);
+                const checkboxes = [...node.getElementsByTagName('INPUT')].filter(elem => !Object.values(labelsAndCheckboxes).some(value => value.checkbox === elem));
+                const labels = [...node.getElementsByTagName('LABEL')].filter(elem => !labelsAndCheckboxes.hasOwnProperty(elem.id) && elem.offsetWidth > 0 && elem.offsetHeight > 0);
+
+                let filteredCheckboxes = checkboxes.filter(elem => !Object.values(modifiedLabelsAndCheckboxes).some(value => value.checkbox === elem)
+                    && (elem.type === 'checkbox' || (elem.classList && [...elem.classList].find(clazz => clazz.match(/checkbox/i))))
+                    && ((elem.id && elem.id.match(filterRegex)) || (elem.name && elem.name.match(filterRegex))
+                        || (elem.title && elem.title.match(filterRegex)) || (elem.classList && [...elem.classList].find(clazz => clazz.match(filterRegex)))));
+
+
+                let filteredLabels = labels.filter(elem => !modifiedLabelsAndCheckboxes.hasOwnProperty(elem) && ((elem.id && elem.id.match(filterRegex)) || (elem.name && elem.name.match(filterRegex))
+                    || (elem.title && elem.title.match(filterRegex)) || (elem.for && elem.for.match(filterRegex))
+                    || (elem.classList && [...elem.classList].find(clazz => clazz.match(filterRegex)))));
+
+
+                const labelsAndCheckboxesToDisable = {};
+
+                for (var i = 0, labelsLength = filteredLabels.length; i < labelsLength; i++) {
+                    const label = filteredLabels[i];
+                    for (var j = 0, checkboxesLength = checkboxes.length; j < checkboxesLength; j++) {
+                        const checkbox = checkboxes[j];
+
+                        if ((label.for && checkbox.id && label.for === checkbox.id) || isParentOrChild(checkbox, label) || areSiblings(checkbox, label)) {
+                            if (!label.id) {
+                                label.id = uuidv4();
+                            }
+
+                            if (!labelsAndCheckboxesToDisable.hasOwnProperty(label.id)) {
+                                labelsAndCheckboxesToDisable[label.id] = {
+                                    label,
+                                    checkbox,
+                                    pointerEvents: label.style.pointerEvents,
+                                }
+                            }
+
+                            break;
+                        }
+                    }
                 }
 
-                checkboxesFound = checkboxesFound.concat(checkboxes);
+                for (var i = 0, checkboxesLength = filteredCheckboxes.length; i < checkboxesLength; i++) {
+                    const checkbox = filteredCheckboxes[i];
+                    for (var j = 0, labelsLength = labels.length; j < labelsLength; j++) {
+                        const label = labels[j];
+
+                        if ((label.for && checkbox.id && label.for === checkbox.id) || isParentOrChild(checkbox, label) || areSiblings(checkbox, label)) {
+                            if (!label.id) {
+                                label.id = uuidv4();
+                            }
+
+                            if (!labelsAndCheckboxesToDisable.hasOwnProperty(label)) {
+                                labelsAndCheckboxesToDisable[label.id] = {
+                                    label,
+                                    checkbox,
+                                    pointerEvents: label.style.pointerEvents,
+                                };
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                if (enabled) {
+                    disableLabelsAndCheckboxes(labelsAndCheckboxesToDisable);
+                }
+
+                labelsAndCheckboxes = {
+                    ...labelsAndCheckboxes,
+                    ...labelsAndCheckboxesToDisable
+                }
             });
         }
     });
 }
 
-disableCheckboxes = (checkboxes) => {
-    for (const checkbox of checkboxes) {
+function areSiblings(elem1, elem2) {
+    return elem1 != elem2 && [...elem1.parentNode.children].some(child => child == elem2);
+}
+
+function isParentOrChild(elem1, elem2) {
+    return elem1.contains(elem2) || elem2.contains(elem1);
+}
+
+disableLabelsAndCheckboxes = (labelsAndCheckboxes) => {
+    for (const labelId in labelsAndCheckboxes) {
+        const label = labelsAndCheckboxes[labelId].label;
+        const checkbox = labelsAndCheckboxes[labelId].checkbox;
+
         if (!iconSet) {
             chrome.runtime.sendMessage({ type: 'iconNotification', enabled, });
             iconSet = true;
         }
-        modifiedCheckboxes.push(checkbox);
-        checkbox.checked = undefined;
-        checkbox.value = undefined;
-        checkbox.disabled = true;
-        disableLabels(checkbox.parentNode);
-    }
-}
 
-disableLabels = (node) => {
-    const labels = [...node.getElementsByTagName('LABEL')].filter(elem => !modifiedLabels.hasOwnProperty(elem) /*&& typeof elem.onclick === 'function'*/
-        && ((elem.id && elem.id.match(filterRegex)) || (elem.name && elem.name.match(filterRegex))
-            || (elem.title && elem.title.match(filterRegex)) || (elem.for && elem.for.match(filterRegex))));
-
-    for (const label of labels) {
-        if (!label.id) {
-            label.id = uuidv4();
+        if (checkbox.checked) {
+            label.click();
         }
-        modifiedLabels[label.id] = label.style.pointerEvents;
+
         label.disabled = true;
         label.style.pointerEvents = 'none';
+
+        checkbox.checked = undefined;
+        checkbox.value = undefined;
+        checkbox.disabled = true;  
+    }
+
+    modifiedLabelsAndCheckboxes = {
+        ...modifiedLabelsAndCheckboxes,
+        ...labelsAndCheckboxes,
     }
 }
 
-enableCheckboxes = () => {
-    while (modifiedCheckboxes.length > 0) {
-        const checkbox = modifiedCheckboxes.pop();
-        checkbox.disabled = false;
-    }
-}
+enableLabelsAndCheckboxes = () => {
+    for (const labelId in modifiedLabelsAndCheckboxes) {
+        const curObj = modifiedLabelsAndCheckboxes[labelId];
+        const label = curObj.label;
 
-enableLabels = () => {
-    for (const labelId in modifiedLabels) {
-        const label = document.getElementById(labelId);
+        curObj.checkbox.disabled = false;
+
         label.disabled = false;
-        label.style.pointerEvents = modifiedLabels[labelId];
-        delete modifiedLabels[labelId];
+        label.style.pointerEvents = curObj.pointerEvents;
+        delete modifiedLabelsAndCheckboxes[labelId];
     }
 }
 
@@ -102,17 +181,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
 
             if (enabled) {
-                disableCheckboxes(checkboxesFound);
+                disableLabelsAndCheckboxes(labelsAndCheckboxes);
             } else {
-                enableCheckboxes();
-                enableLabels();
+                enableLabelsAndCheckboxes();
             }
         }
 
         sendResponse({
             enabled,
-            modifiedCheckboxes: modifiedCheckboxes.length,
-            checkboxesFound: checkboxesFound.length,
+            modifiedCheckboxes: Object.keys(modifiedLabelsAndCheckboxes).length,
+            checkboxesFound: Object.keys(labelsAndCheckboxes).length,
         })
 
         return true;
