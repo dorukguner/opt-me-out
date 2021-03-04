@@ -1,18 +1,3 @@
-/**
- * The idea is to:
- * 1: Find all checkboxes and labels related to marketing
- *      a: If a label is related to any checkbox we disable it and remove all pointer events
- *      b: All checkboxes are disabled no matter what, find all related labels and disable them too
- *      C: An element is related to another element if it is a sibling, parent or child
- *      d: We check parents and children first 
- * 2: Store these to allow for re-enabling
- * 
- * 
- * 
-*/
-
-// TODO make labelsToDisable a map between the label and whether or not the checkbox is selected to then allow for deselecting of checkbox by firing event
-
 const targetNode = document;
 const config = { childList: true, subtree: true };
 const filterRegex = /mail|sub|letter|marketing|opt\-in|optin|promo/i;
